@@ -1,16 +1,5 @@
 local tinsert, tremove = table.insert, table.remove
 
-
--- 4.1 temp fix
-local function temp_CombatLog_OnEvent(filterSettings, timestamp, event, ...)
-	return CombatLog_OnEvent(filterSettings, timestamp, event, false, ...)
-end
-
-local CombatLog_OnEvent = temp_CombatLog_OnEvent
---/
-
-
-
 local function CommaNumber(num)
 	local found
 
@@ -41,7 +30,7 @@ end
 
 local FormatTimestamp = {}
 FormatTimestamp[1] = function(timestamp)
-	return string.format("%.01f s", floor((timestamp - DeathNote.current_death[1]) * 10 + 0.05) / 10)
+	return string.format("%.01f s", floor((timestamp - DeathNote.current_death.timestamp) * 10 + 0.05) / 10)
 end
 
 FormatTimestamp[2] = function(timestamp)
@@ -107,13 +96,14 @@ local function GetUnitColor(guid, unit, flags)
 	end
 end
 
-function DeathNote:FormatUnit(guid, name, flags)
+function DeathNote:FormatUnit(guid, name, flags, raidflags)
 	if not name then
 		return ""
 	end
 
+	self:Print(guid, name, flags, raidflags)
 	if bit.band(flags, COMBATLOG_OBJECT_RAIDTARGET_MASK) > 0 then
-		return string.format("%s%s%s|r", CombatLog_String_GetIcon(flags, "dest"), GetUnitColor(guid, name, flags), name)
+		return string.format("%s%s%s|r", CombatLog_String_GetIcon(raidflags, "dest"), GetUnitColor(guid, name, raidflags), name)
 	else
 		return string.format("%s%s|r", GetUnitColor(guid, name, flags), name)
 	end
@@ -404,16 +394,16 @@ local function GetGroupFormatInfo(group)
 
 	for i = #group, 1, -1 do
 		local entry = group[i]
-		local event = entry[4]
+		local event = entry.event
 		local formatter = event_formatter_table[event]
 		if formatter and formatter[1] then
-			local _, spell, source = formatter[1](unpack(entry, 11))
+			local _, spell, source = formatter[1](unpack(entry, DeathNote.EntryIndexInfo.eventArgs))
 			if not source or source == "" then
-				if entry[6] then
-					if not guid_name_cache[entry[5]] then
-						guid_name_cache[entry[5]] = DeathNote:FormatUnit(entry[5], entry[6], entry[7])
+				if entry.sourceName then
+					if not guid_name_cache[entry.sourceGUID] then
+						guid_name_cache[entry.sourceGUID] = DeathNote:FormatUnit(entry.sourceGUID, entry.sourceName, entry.sourceFlags, entry.sourceRaidFlags)
 					end
-					source = guid_name_cache[entry[5]]
+					source = guid_name_cache[entry.sourceGUID]
 				else
 					source = "|cFFFFFFFFNone|r"
 				end
@@ -449,12 +439,12 @@ function DeathNote:CycleHealthDisplay()
 end
 
 function DeathNote:FormatEntrySpell(entry)
-	local event = entry[4]
+	local event = entry.event
 	local formatter = event_formatter_table[event]
 	local spell
 
 	if formatter and formatter[1] then
-		_, spell, _ = formatter[1](unpack(entry, 11))
+		_, spell, _ = formatter[1](unpack(entry, DeathNote.EntryIndexInfo.eventArgs))
 	else
 		return nil
 	end
@@ -466,8 +456,8 @@ end
 -- Name List
 ------------------------------------------------------------------------------
 
-function DeathNote:FormatNameListEntry(v)
-	return string.format("[%s] %s", date("%X", v[1]), self:FormatUnit(v[2], v[3], v[4]))
+function DeathNote:FormatNameListEntry(death)
+	return string.format("[%s] %s", date("%X", death.timestamp), self:FormatUnit(death.GUID, death.name, death.flags, death.raidFlags))
 end
 
 ------------------------------------------------------------------------------
@@ -475,11 +465,11 @@ end
 ------------------------------------------------------------------------------
 
 function DeathNote:FormatChatTimestamp(entry)
-	return FormatTimestamp[self.settings.display.timestamp](entry[3])
+	return FormatTimestamp[self.settings.display.timestamp](entry.timestamp)
 end
 
 function DeathNote:FormatChatHealth(entry)
-	return FormatHealthFull(entry[1], entry[2])
+	return FormatHealthFull(entry.hp, entry.hpMax)
 end
 
 local iconBitMap = {
@@ -504,7 +494,7 @@ function DeathNote:CleanForChat(text)
 end
 
 function DeathNote:FormatCombatLog(entry)
-	return CombatLog_OnEvent(DEFAULT_COMBATLOG_FILTER_TEMPLATE, unpack(entry, 3))
+	return CombatLog_OnEvent(DEFAULT_COMBATLOG_FILTER_TEMPLATE, unpack(entry, DeathNote.EntryIndexInfo.cleArgs))
 end
 
 function DeathNote:FormatChatAmount(entry)
@@ -512,18 +502,18 @@ function DeathNote:FormatChatAmount(entry)
 end
 
 function DeathNote:FormatChatSpell(entry)
-	local event = entry[4]
+	local event = entry.event
 	local formatter = event_formatter_table[event]
 
 	if formatter and formatter[2] then
-		return formatter[2](unpack(entry, 11))
+		return formatter[2](unpack(entry, DeathNote.EntryIndexInfo.eventArgs))
 	else
 		return ""
 	end
 end
 
 function DeathNote:FormatChatSource(entry)
-	return self:CleanForChat(self:FormatUnit(entry[5], entry[6], entry[7]))
+	return self:CleanForChat(self:FormatUnit(entry.sourceGUID, entry.sourceName, entry.sourceFlags, entry.sourceRaidFlags))
 end
 
 ------------------------------------------------------------------------------
@@ -535,7 +525,7 @@ function DeathNote:FormatTooltipTimestamp(tip, entry)
 		return self:FormatTooltipTimestampGroup(tip, entry)
 	end
 
-	local text = FormatTimestamp[self.settings.display.timestamp % #FormatTimestamp + 1](entry[3])
+	local text = FormatTimestamp[self.settings.display.timestamp % #FormatTimestamp + 1](entry.timestamp)
 	tip:SetText(text, 1, .82, 0, 1)
 	return tip
 end
@@ -545,7 +535,7 @@ function DeathNote:FormatTooltipHealth(tip, entry)
 		return self:FormatTooltipHealthGroup(tip, entry)
 	end
 
-	tip:SetText(FormatHealthFull(entry[1], entry[2]))
+	tip:SetText(FormatHealthFull(entry.hp, entry.hpMax))
 	return tip
 end
 
@@ -554,7 +544,7 @@ function DeathNote:FormatTooltipAmount(tip, entry)
 		return self:FormatTooltipAmountGroup(tip, entry)
 	end
 
-	local text, r, g, b = CombatLog_OnEvent(DEFAULT_COMBATLOG_FILTER_TEMPLATE, unpack(entry, 3))
+	local text, r, g, b = CombatLog_OnEvent(DEFAULT_COMBATLOG_FILTER_TEMPLATE, unpack(entry, DeathNote.EntryIndexInfo.cleArgs))
 	tip:SetText(text, r, g, b)
 	return tip
 end
@@ -564,11 +554,11 @@ function DeathNote:FormatTooltipSpell(tip, entry)
 		return self:FormatTooltipSpellGroup(tip, entry)
 	end
 
-	local event = entry[4]
+	local event = entry.event
 	local formatter = event_formatter_table[event]
 
 	if formatter and formatter[3] then
-		return formatter[3](tip, unpack(entry, 11))
+		return formatter[3](tip, unpack(entry, DeathNote.EntryIndexInfo.eventArgs))
 	else
 		return false
 	end
@@ -579,8 +569,8 @@ function DeathNote:FormatTooltipSource(tip, entry)
 		return self:FormatTooltipSourceGroup(tip, entry)
 	end
 
-	if entry[5] and entry[6] and entry[7] then
-		tip:SetHyperlink(format(TEXT_MODE_A_STRING_SOURCE_UNIT, "", entry[5], entry[6], entry[7]))
+	if entry.sourceGUID and entry.sourceName and entry.sourceRaidFlags then
+		tip:SetHyperlink(format(TEXT_MODE_A_STRING_SOURCE_UNIT, "", entry.sourceGUID, entry.sourceName, entry.sourceRaidFlags))
 		return tip
 	else
 		return false
@@ -614,7 +604,7 @@ end
 function DeathNote:FormatTooltipHealthGroup(tip, group)
 	local entry = group[1]
 
-	tip:SetText(FormatHealthFull(entry[1], entry[2]))
+	tip:SetText(FormatHealthFull(entry.hp, entry.hpMax))
 	return tip
 end
 
@@ -628,7 +618,7 @@ function DeathNote:FormatTooltipAmountGroup(tip, group)
 
 	for i = #group, math.max(#group - max_tip_lines + 1 + (limited and 1 or 0), 1), -1 do
 		local entry = group[i]
-		local text, r, g, b = CombatLog_OnEvent(DEFAULT_COMBATLOG_FILTER_TEMPLATE, unpack(entry, 3))
+		local text, r, g, b = CombatLog_OnEvent(DEFAULT_COMBATLOG_FILTER_TEMPLATE, unpack(entry, DeathNote.EntryIndexInfo.cleArgs))
 		tip:AddLine(text, r, g, b)
 	end
 
@@ -702,22 +692,22 @@ function DeathNote:FormatEntry(entry)
 		return self:FormatGroupEntry(entry)
 	end
 
-	local event = entry[4]
+	local event = entry.event
 	local formatter = event_formatter_table[event]
 	local amount, spell, source
 
 	if formatter and formatter[1] then
-		amount, spell, source = formatter[1](unpack(entry, 11))
+		amount, spell, source = formatter[1](unpack(entry, DeathNote.EntryIndexInfo.eventArgs))
 	else
 		amount, spell, source = "No handler", event, ""
 	end
 
 	return {
-		FormatTimestamp[self.settings.display.timestamp](entry[3]),
-		FormatHealth[self.settings.display.health](entry[1], entry[2]),
+		FormatTimestamp[self.settings.display.timestamp](entry.timestamp),
+		FormatHealth[self.settings.display.health](entry.hp, entry.hpMax),
 		amount,
 		spell,
-		source or self:FormatUnit(entry[5], entry[6], entry[7]),
+		source or self:FormatUnit(entry.sourceGUID, entry.sourceName, entry.sourceFlags, entry.sourceRaidFlags),
 	}
 end
 
@@ -738,7 +728,7 @@ end
 
 local function FormatGroupHealth(group)
 	local entry = group[1]
-	return FormatHealth[DeathNote.settings.display.health](entry[1], entry[2])
+	return FormatHealth[DeathNote.settings.display.health](entry.hp, entry.hpMax)
 end
 
 local function FormatGroupInfo(group, limit)
@@ -865,8 +855,8 @@ function DeathNote:FormatReportCombatLog(entry, channel, target)
 			self:FormatReportCombatLog(entry[i], channel, target)
 		end
 	else
-		local timestamp = entry[3]
-		local msg = string.format("[%.01fs] (%s) %s", timestamp - self.current_death[1], SuffixNumber(entry[1]), self:FormatChatAmount(entry))
+		local timestamp = entry.timestamp
+		local msg = string.format("[%.01fs] (%s) %s", timestamp - self.current_death.timestamp, SuffixNumber(entry.hp), self:FormatChatAmount(entry))
 		SendChatMessage(msg, channel, nil, target)
 		self.report_line_count = self.report_line_count + 1
 	end
@@ -887,15 +877,15 @@ function DeathNote:FormatReportCompact(entry, channel, target)
 
 		--[[
 		if first[3] == last[3] then
-			timestamp = string.format("[%.01f s]", first[3] - self.current_death[1])
+			timestamp = string.format("[%.01f s]", first.timestamp - self.current_death.timestamp)
 		else
-			timestamp = string.format("[%.01f s .. %.01f s]", last[3] - self.current_death[1], first[3] - self.current_death[1])
+			timestamp = string.format("[%.01f s .. %.01f s]", last.timestamp - self.current_death.timestamp, first.timestamp - self.current_death.timestamp)
 		end
 		]]
-		-- SendChatMessage(string.format("[%5.01f s]", last[3] - self.current_death[1]), channel, nil, target)
-		timestamp = string.format("[%5.01fs]", first[3] - self.current_death[1])
-		-- health = string.format("(%2s%%)", math.floor(first[1]/first[2]*100))
-		health = first[1] > 0 and string.format("(%4s)", SuffixNumber(first[1]))
+		-- SendChatMessage(string.format("[%5.01f s]", last.timestamp - self.current_death.timestamp), channel, nil, target)
+		timestamp = string.format("[%5.01fs]", first.timestamp - self.current_death.timestamp)
+		-- health = string.format("(%2s%%)", math.floor(first.hp/first.hpMax*100))
+		health = first.hp > 0 and string.format("(%4s)", SuffixNumber(first.hp))
 		
 		local spells, sources = FormatGroupInfo(entry, 3)
 
@@ -930,14 +920,14 @@ function DeathNote:FormatReportCompact(entry, channel, target)
 			msg = string.format("%s (%s)", table.concat(rlist, " "), spells)
 		end
 	else
-		timestamp = string.format("[%5.01fs]", entry[3] - self.current_death[1])
-		-- health = string.format("(%2s%%)", math.floor(entry[1]/entry[2]*100))
-		health = entry[1] > 0 and string.format("(%4s)", SuffixNumber(entry[1]))
+		timestamp = string.format("[%5.01fs]", entry.timestamp - self.current_death.timestamp)
+		-- health = string.format("(%2s%%)", math.floor(entry.hp/entry.hpMax*100))
+		health = entry.hp > 0 and string.format("(%4s)", SuffixNumber(entry.hp))
 		
 		local type = self:GetEntryType(entry)
 		if type == "DAMAGE" then
 			local amount, overkill = self:GetEntryDamage(entry)
-			local source = self:FormatUnit(entry[5], entry[6], entry[7])
+			local source = self:FormatUnit(entry.sourceGUID, entry.sourceName, entry.sourceFlags, entry.sourceRaidFlags)
 			local spell = self:FormatEntrySpell(entry)
 			if source ~= "" then
 				msg = string.format("-%s (%s - %s)", CommaNumber(amount), source, spell)
@@ -949,7 +939,7 @@ function DeathNote:FormatReportCompact(entry, channel, target)
 			 end
 		elseif type == "HEAL" then
 			local amount = self:GetEntryHeal(entry)
-			local source = self:FormatUnit(entry[5], entry[6], entry[7])
+			local source = self:FormatUnit(entry.sourceGUID, entry.sourceName, entry.sourceFlags, entry.sourceRaidFlags)
 			local spell = self:FormatEntrySpell(entry)
 			if source ~= "" then
 				msg = string.format("+%s (%s - %s)", CommaNumber(amount), source, spell)
@@ -958,7 +948,7 @@ function DeathNote:FormatReportCompact(entry, channel, target)
 			end
 		elseif type == "AURA" then
 			local auraGain, auraType, amount, _, _, _, auraBroken = self:GetEntryAura(entry)
-			local source = self:FormatUnit(entry[5], entry[6], entry[7])
+			local source = self:FormatUnit(entry.sourceGUID, entry.sourceName, entry.sourceFlags, entry.sourceRaidFlags)
 			local spell = self:FormatEntrySpell(entry)
 			if auraGain then
 				msg = string.format("+%s (%s)", spell, source)
@@ -970,7 +960,7 @@ function DeathNote:FormatReportCompact(entry, channel, target)
 				msg = msg .. string.format(" <%s>", CommaNumber(amount))
 			end
 		elseif type == "DEATH" then
-			msg = string.format(ACTION_UNIT_DIED_FULL_TEXT, nil, nil, nil, entry[9])
+			msg = string.format(ACTION_UNIT_DIED_FULL_TEXT, nil, nil, nil, entry.destName)
 		end
 	end
 

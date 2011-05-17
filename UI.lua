@@ -1396,7 +1396,7 @@ function DeathNote:UpdateNameList()
 
 	local count = #deaths
 	for i = 1, count do
-		local v = deaths[count - i + 1]
+		local death = deaths[count - i + 1]
 
 		if not self.name_items[i] then
 			local button = CreateFrame("Button", "DeathNoteNameListButton" .. i, self.name_content, "OptionsListButtonTemplate")
@@ -1417,9 +1417,9 @@ function DeathNote:UpdateNameList()
 
 		local btn = self.name_items[i]
 
-		btn.userdata = v
-		btn:GetFontString():SetText(self:FormatNameListEntry(v))
-		if self.current_death == v then
+		btn.userdata = death
+		btn:GetFontString():SetText(self:FormatNameListEntry(death))
+		if self.current_death == death then
 			btn:LockHighlight()
 		else
 			btn:UnlockHighlight()
@@ -1647,7 +1647,7 @@ function DeathNote:AddSourceFilter(entry)
 		return
 	end
 
-	local source = entry[6] or ""
+	local source = entry.sourceName or ""
 
 	self.settings.display_filters.source_filter[string.lower(source)] = source
 	LibStub("AceConfigDialog-3.0"):Open("Death Note - Others", self.others_tab)
@@ -1673,7 +1673,7 @@ function DeathNote:SetSourceHilight(entry)
 		return
 	end
 
-	local source = entry[5]
+	local source = entry.sourceGUID
 
 	self.current_source_hilight = self.current_source_hilight ~= source and source or nil
 	self.current_spell_hilight = nil
@@ -1692,7 +1692,7 @@ function DeathNote:RefreshHighlight()
 		if self:IsEntryGroup(entry) then
 		else
 			local spellid = self:GetEntrySpell(entry)
-			local source = entry[5]
+			local source = entry.sourceGUID
 
 			if self.current_spell_hilight and self.current_spell_hilight == spellid then
 				self.logframe:SetLineHighlight(i, spell_hilight)

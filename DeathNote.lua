@@ -105,7 +105,7 @@ function DeathNote:SendReport(channel, arg)
 		func = self.FormatReportCompact
 	end
 
-	local msg = string.format("DeathNote: Death report for %s at %s", self.current_death[3], date("%X", self.current_death[1]))
+	local msg = string.format("DeathNote: Death report for %s at %s", self.current_death.name, date("%X", self.current_death.timestamp))
 	SendChatMessage(msg, channel, nil, target)
 
 	self.report_line_count = 0
